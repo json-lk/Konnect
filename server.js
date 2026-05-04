@@ -78,6 +78,22 @@ const getVisibleRooms = async (user) => {
 
 // 4. Socket Logic
 io.on('connection', (socket) => {
+    // Inside io.on('connection', (socket) => { ... })
+    socket.on('checkAuthStatus', () => {
+        if (socket.handshake.session && socket.handshake.session.user) {
+            // User is logged in
+            socket.emit('authStatus', { 
+                loggedIn: true, 
+                user: socket.handshake.session.user 
+            });
+        } else {
+            // User is a guest
+            socket.emit('authStatus', { 
+                loggedIn: false 
+            });
+        }
+    });
+    
     const session = socket.handshake.session;
 
     // Check session on every connection
