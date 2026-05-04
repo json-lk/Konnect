@@ -1,15 +1,7 @@
 {
   "version": 2,
-  "cleanUrls": true,
-  "trailingSlash": false,
   "rewrites": [
-    {
-      "source": "/chat",
-      "destination": "/This page.html"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/$1"
-    }
+    { "source": "/socket.io/(.*)", "destination": "/server.js" },
+    { "source": "/(.*)", "destination": "/Public/$1" }
   ]
 }
