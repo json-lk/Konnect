@@ -78,54 +78,40 @@ const getVisibleRooms = async (user) => {
 io.on('connection', (socket) => {
     const session = socket.handshake.session;
 
-    if (session && session.user) {
+    // Check session on every connection
+    if (session?.user) {
         socket.emit('sessionRestore', { user: session.user });
         getVisibleRooms(session.user).then(rooms => socket.emit('initRooms', rooms));
     }
 
     socket.on('login', async (data) => {
         try {
-            const { data: user, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('email', data.email)
-                .single();
-
+            const { data: user } = await supabase.from('users').select('*').eq('email', data.email).single();
             if (user && await bcrypt.compare(data.password, user.password)) {
+                // Attach to session
                 session.user = { name: user.name, email: user.email };
-                session.save(async () => {
+                // FORCE SAVE to Supabase session table
+                session.save(() => {
                     socket.emit('loginResponse', { success: true, user: session.user });
-                    const rooms = await getVisibleRooms(session.user);
-                    socket.emit('initRooms', rooms);
                 });
             } else {
                 socket.emit('loginResponse', { success: false, message: 'Invalid credentials.' });
             }
-        } catch (err) {
-            socket.emit('loginResponse', { success: false, message: 'Server error.' });
-        }
+        } catch (err) { socket.emit('loginResponse', { success: false, message: 'Server error.' }); }
     });
 
     socket.on('signup', async (data) => {
         try {
             const hashedPassword = await bcrypt.hash(data.password, 10);
-            const { data: newUser, error } = await supabase
-                .from('users')
-                .insert([{ name: data.name, email: data.email, password: hashedPassword }])
-                .select()
-                .single();
-
+            const { data: newUser, error } = await supabase.from('users')
+                .insert([{ name: data.name, email: data.email, password: hashedPassword }]).select().single();
             if (error) throw error;
 
             session.user = { name: newUser.name, email: newUser.email }; 
-            session.save(async () => {
+            session.save(() => {
                 socket.emit('signupResponse', { success: true, user: session.user });
-                const rooms = await getVisibleRooms(session.user);
-                socket.emit('initRooms', rooms);
             });
-        } catch (e) {
-            socket.emit('signupResponse', { success: false, message: 'Error or email exists.' });
-        }
+        } catch (e) { socket.emit('signupResponse', { success: false, message: 'Error or email exists.' }); }
     });
 
     socket.on('createRoom', async (roomData) => {

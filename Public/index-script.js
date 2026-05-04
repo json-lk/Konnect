@@ -72,30 +72,17 @@ loginForm.addEventListener('submit', (e) => {
 // Handle Signup Response
 socket.on('signupResponse', (response) => {
     if (response.success) {
-        // Store the user info returned from Supabase
-        const userData = {
-            name: response.user.name,
-            email: response.user.email
-        };
-        
-        localStorage.setItem('currentUser', JSON.stringify(userData));
-        alert(`Welcome, ${response.user.name}! Account created.`);
-        
-        // Redirect to your main chat page
-        window.location.href = 'This page.html'; 
+        localStorage.setItem('currentUser', JSON.stringify(response.user));
+        window.location.href = 'mainpage.html'; // Ensure this matches your file name
     } else {
         alert("Signup failed: " + response.message);
     }
 });
 
-// Handle Login Response
 socket.on('loginResponse', (res) => {
     if (res.success) {
-        // Save the session user from Supabase to local storage
         localStorage.setItem('currentUser', JSON.stringify(res.user));
-        
-        // Move to the chat page
-        window.location.href = 'This page.html'; 
+        window.location.href = 'mainpage.html'; 
     } else {
         alert(res.message);
     }

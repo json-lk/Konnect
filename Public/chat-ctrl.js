@@ -1,10 +1,5 @@
-// 1. Initialize Socket
-// Ensure this URL matches your backend deployment (Render/Vercel/etc.)
 const URL = "https://non-e.onrender.com"; 
-const socket = io(URL, {
-    withCredentials: true,
-    transports: ["websocket", "polling"]
-});
+const socket = io(URL, { withCredentials: true, transports: ["websocket", "polling"] });
 
 // --- SELECTORS ---
 const createChatBtn = document.getElementById('create-chat');
@@ -81,18 +76,18 @@ chatroomSettingsBtn.addEventListener('click', () => {
 sendmessage.addEventListener('submit', (e) => {
     e.preventDefault(); 
     const user = JSON.parse(localStorage.getItem('currentUser'));
-    if (!user) return alert("Please log in!");
+    if (!user) {
+        alert("Session expired. Please log in.");
+        return authModal.classList.remove('hidden'); // Show login modal
+    }
     if (!messageInput.value.trim() || !currentRoom) return;
 
-    // KEY CHANGE: Matching the backend 'roomName' parameter
     socket.emit('newMessage', {
         roomName: currentRoom,
         message: messageInput.value
     });
     messageInput.value = '';
-});
-
-// --- FUNCTIONS ---
+});// --- FUNCTIONS ---
 
 function displaySingleMessage(data) {
     const user = JSON.parse(localStorage.getItem('currentUser'));
@@ -137,11 +132,18 @@ function openChatRoom(room) {
 }
 
 // --- SOCKET LISTENERS ---
-
-// Fired when backend restores session from Supabase/Postgres
+// On load, confirm session with server
 socket.on('sessionRestore', (data) => {
-    localStorage.setItem('currentUser', JSON.stringify(data.user));
+    if (data.user) {
+        localStorage.setItem('currentUser', JSON.stringify(data.user));
+        // Refresh room list now that we are confirmed logged in
+        socket.emit('getRooms'); 
+    } else {
+        // Only redirect if they are trying to access protected features
+        console.log("Not logged in.");
+    }
 });
+
 
 socket.on('initRooms', (rooms) => {
     displayBox.innerHTML = ''; 
