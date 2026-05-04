@@ -1,13 +1,15 @@
 {
+  "version": 2,
   "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/",
-      "destination": "/Public/index.html"
+      "source": "/chat",
+      "destination": "/This page.html"
     },
     {
       "source": "/(.*)",
-      "destination": "/Public/$1"
+      "destination": "/$1"
     }
   ]
 }
