@@ -9,7 +9,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/Public/$1"
+      "destination": "/$1"
     }
   ]
 }

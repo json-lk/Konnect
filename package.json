@@ -1,27 +1,26 @@
 {
   "name": "secreteplace",
   "version": "1.0.0",
-  "description": "Real-time chat with modern URL parsing",
+  "description": "",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js",
-    "dev": "node --trace-deprecation server.js"
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.1",
     "bcrypt": "^5.1.1",
-    "connect-mongo": "^5.1.0",
-    "dotenv": "^16.4.5",
+    "connect-pg-simple": "^10.0.0",
+    "dotenv": "^16.3.1",
     "express": "^4.19.2",
-    "express-session": "^1.18.0",
+    "express-session": "^1.19.0",
     "express-socket.io-session": "^1.3.5",
-    "mongodb": "^6.5.0",
-    "mongoose": "^8.3.3",
-    "socket.io": "^4.7.5",
+    "pg": "^8.20.0",
+    "socket.io": "^4.8.3",
     "uuid": "^9.0.1"
   }
 }

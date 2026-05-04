@@ -1,56 +1,48 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
-const MongoStore = require('connect-mongo');
+const { createClient } = require('@supabase/supabase-js');
 const socketIo = require('socket.io');
 const path = require('path');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const sharedsession = require("express-socket.io-session");
-const mongoose = require('mongoose');
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// 1. Supabase Connection
+// Ensure SUPABASE_URL and SUPABASE_ANON_KEY are in your .env
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY
+);
+
+// 2. Session Setup (Using PostgreSQL via your Supabase connection string)
+const sessionMiddleware = session({
+    store: new pgSession({
+        conString: process.env.DATABASE_URL, // Use Supabase Transaction/Session string
+        tableName: 'session'                 // Create this table in Supabase first
+    }),
+    secret: process.env.SESSION_SECRET || 'secret-chat-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        secure: NODE_ENV === 'production', 
+        httpOnly: true,
+        sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 14 * 24 * 60 * 60 * 1000 
+    }
+});
 
 app.set('trust proxy', 1); 
-// 1. Database Connection
-const connectDB = async () => {
-    try {
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("✅ Connected to MongoDB Atlas: Non_e Database");
-    } catch (err) {
-        console.error("❌ CRITICAL: Database connection failed!", err.message);
-    }
-};
+app.use(sessionMiddleware);
+app.use(express.static(path.join(__dirname, 'Public')));
 
-connectDB();
-
-// 2. Database Models
-const User = mongoose.model('User', new mongoose.Schema({
-    name: String,
-    email: { type: String, unique: true },
-    password: { type: String, required: true }
-}));
-
-const Room = mongoose.model('Room', new mongoose.Schema({
-    name: { type: String, unique: true },
-    id: String,
-    password: { type: String, default: "" },
-    owner: String
-}));
-
-const Message = mongoose.model('Message', new mongoose.Schema({
-    roomName: String,
-    message: String,
-    sender: String,
-    timestamp: { type: Date, default: Date.now }
-}));
-
-// 3. Socket & Session Setup
 const io = socketIo(server, {
     cors: {
         origin: "https://none-mauve.vercel.app",
@@ -59,96 +51,71 @@ const io = socketIo(server, {
     }
 });
 
-const sessionMiddleware = session({
-    secret: process.env.SESSION_SECRET || 'secret-chat-key',
-    resave: true,               // Force session to be saved back to the store
-    saveUninitialized: false, 
-    proxy: true,                // Trust the Render proxy for HTTPS
-    store: MongoStore.create({
-        mongoUrl: process.env.MONGO_URI,
-        ttl: 14 * 24 * 60 * 60 
-    }),
-    cookie: { 
-        secure: true,           // MUST be true for SameSite: 'none'
-        httpOnly: true,
-        sameSite: 'none',       // REQUIRED for cross-domain (Vercel to Render)
-        maxAge: 14 * 24 * 60 * 60 * 1000 
-    }
-});
+io.use(sharedsession(sessionMiddleware, { autoSave: true }));
 
-app.use(sessionMiddleware);
-
-io.use(sharedsession(sessionMiddleware, { 
-    autoSave: true 
-}));
-
-app.use(express.static(path.join(__dirname, 'Public')));
-
-// 4. Helper Logic
+// 3. Helper Logic
 const getVisibleRooms = async (user) => {
     if (!user) return [];
-    const roomsWithMessage = await Message.distinct('roomName', { sender: user.name });
-    return await Room.find({
-        $or: [
-            { owner: user.email },
-            { name: { $in: roomsWithMessage } }
-        ]
-    });
+    
+    // Get rooms where user has sent a message
+    const { data: userMessages } = await supabase
+        .from('messages')
+        .select('room_name')
+        .eq('sender', user.name);
+
+    const roomsWithActivity = (userMessages || []).map(m => m.room_name);
+
+    // Fetch rooms owned by user OR rooms where they've messaged
+    const { data: rooms } = await supabase
+        .from('rooms')
+        .select('*')
+        .or(`owner.eq.${user.email},name.in.(${roomsWithActivity.join(',') || 'NULL'})`);
+
+    return rooms || [];
 };
 
-// 5. Socket Logic
+// 4. Socket Logic
 io.on('connection', (socket) => {
-    console.log("Cookie Header:", socket.handshake.headers.cookie);
-    const protocol = socket.handshake.secure ? 'https' : 'http';
-    const host = socket.handshake.headers.host || 'localhost';
-    const connectionUrl = new URL(socket.handshake.url, `${protocol}://${host}`);
-
     const session = socket.handshake.session;
-    console.log(`🚀 Socket connected. Path: ${connectionUrl.pathname}`);
-    console.log(`User: ${session?.user?.email || "guest"}`);
 
-    const refreshUserRooms = async (user) => {
-        const rooms = await getVisibleRooms(user);
-        socket.emit('initRooms', rooms);
-    };
-
-    if (session?.user) {
+    if (session && session.user) {
         socket.emit('sessionRestore', { user: session.user });
-        refreshUserRooms(session.user);
+        getVisibleRooms(session.user).then(rooms => socket.emit('initRooms', rooms));
     }
 
-    socket.on('login', async (data) => {    
+    socket.on('login', async (data) => {
         try {
-            const user = await User.findOne({ email: data.email });
+            const { data: user, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('email', data.email)
+                .single();
+
             if (user && await bcrypt.compare(data.password, user.password)) {
-                // 1. Attach user to session
-                socket.handshake.session.user = { name: user.name, email: user.email };
-            
-                // 2. FORCE SAVE before replying
-                socket.handshake.session.save((err) => {
-                    if (err) return socket.emit('loginResponse', { success: false, message: 'Session save failed' });
-                
-                    socket.emit('loginResponse', { success: true, user: socket.handshake.session.user });
-                    refreshUserRooms(socket.handshake.session.user);
+                session.user = { name: user.name, email: user.email };
+                session.save(async () => {
+                    socket.emit('loginResponse', { success: true, user: session.user });
+                    const rooms = await getVisibleRooms(session.user);
+                    socket.emit('initRooms', rooms);
                 });
-            }else {
+            } else {
                 socket.emit('loginResponse', { success: false, message: 'Invalid credentials.' });
             }
         } catch (err) {
             socket.emit('loginResponse', { success: false, message: 'Server error.' });
         }
     });
+
     socket.on('signup', async (data) => {
         try {
-            const exists = await User.findOne({ email: data.email });
-            if (exists) return socket.emit('signupResponse', { success: false, message: 'Email exists.' });
-
             const hashedPassword = await bcrypt.hash(data.password, 10);
-            const newUser = await User.create({
-                name: data.name,
-                email: data.email,
-                password: hashedPassword
-            });
+            const { data: newUser, error } = await supabase
+                .from('users')
+                .insert([{ name: data.name, email: data.email, password: hashedPassword }])
+                .select()
+                .single();
+
+            if (error) throw error;
 
             session.user = { name: newUser.name, email: newUser.email }; 
             session.save(async () => {
@@ -157,56 +124,62 @@ io.on('connection', (socket) => {
                 socket.emit('initRooms', rooms);
             });
         } catch (e) {
-            socket.emit('signupResponse', { success: false, message: 'Error creating user.' });
+            socket.emit('signupResponse', { success: false, message: 'Error or email exists.' });
         }
     });
 
     socket.on('createRoom', async (roomData) => {
-        socket.handshake.session.reload(async (err) => {
-            if (err || !socket.handshake.session.user) {
-                return socket.emit('errorMsg', 'Session expired.');
-            }
-            try {
-                const exists = await Room.findOne({ $or: [{ name: roomData.name }, { id: roomData.id }] });
-                if (exists) return socket.emit('errorMsg', 'Room already exists!');
-
-                const newRoom = await Room.create({ 
+        if (!session?.user) return socket.emit('errorMsg', 'Login required.');
+        try {
+            const { data: newRoom, error } = await supabase
+                .from('rooms')
+                .insert([{
                     name: roomData.name,
                     password: roomData.password || "",
-                    id: roomData.id || uuidv4(), 
-                    owner: socket.handshake.session.user.email 
-                });
+                    id: roomData.id || uuidv4(),
+                    owner: session.user.email
+                }])
+                .select()
+                .single();
 
-                socket.emit('room-created-success', newRoom);
-                const rooms = await getVisibleRooms(socket.handshake.session.user);
-                socket.emit('initRooms', rooms);
-            } catch (e) {
-                socket.emit('errorMsg', 'Database error.');
-            }
-        });
+            if (error) return socket.emit('errorMsg', 'Room name or ID exists.');
+
+            socket.emit('room-created-success', newRoom);
+            const rooms = await getVisibleRooms(session.user);
+            socket.emit('initRooms', rooms);
+        } catch (e) {
+            socket.emit('errorMsg', 'Error creating room.');
+        }
     });
 
     socket.on('joinRoom', async (roomName) => {
         socket.rooms.forEach(room => { if(room !== socket.id) socket.leave(room); });
         socket.join(roomName);
-        const history = await Message.find({ roomName }).sort({ timestamp: 1 }).limit(50);
-        socket.emit('chatHistory', history); 
+
+        const { data: history } = await supabase
+            .from('messages')
+            .select('*')
+            .eq('room_name', roomName)
+            .order('timestamp', { ascending: true })
+            .limit(100);
+
+        socket.emit('chatHistory', history || []); 
     });
 
     socket.on('newMessage', async (data) => {
-        socket.handshake.session.reload(async (err) => {
-            if (err || !socket.handshake.session.user) return socket.emit('errorMsg', 'Expired.');
-            try {
-                const newMessage = await Message.create({
-                    roomName: data.roomName,
-                    message: data.message,
-                    sender: socket.handshake.session.user.name,
-                });
-                io.to(data.roomName).emit('receiveMessage', newMessage);
-            } catch (e) {
-                socket.emit('errorMsg', 'Save failed.');
-            }
-        });
+        if (!session?.user || !data.roomName) return;
+        
+        const { data: msg, error } = await supabase
+            .from('messages')
+            .insert([{
+                room_name: data.roomName,
+                message: data.message,
+                sender: session.user.name,
+            }])
+            .select()
+            .single();
+
+        if (!error) io.to(data.roomName).emit('receiveMessage', msg);
     });
 
     socket.on('logout', () => {
@@ -217,24 +190,73 @@ io.on('connection', (socket) => {
     });
 
     socket.on('verify-room', async (data) => {
-        if (!session?.user) return socket.emit('room-access-result', { success: false, message: 'Login required.' });
-        const room = await Room.findOne({ name: data.name });
-        if (!room) return socket.emit('room-access-result', { success: false, message: 'Not found.' });
-        
+        const { data: room } = await supabase
+            .from('rooms')
+            .select('*')
+            .eq('name', data.name)
+            .single();
+
+        if (!room) return socket.emit('room-access-result', { success: false, message: 'Room not found.' });
         if (room.password && room.password !== data.password) {
-            return socket.emit('room-access-result', { success: false, message: 'Wrong password.' });
+            return socket.emit('room-access-result', { success: false, message: 'Incorrect password.' });
         }
         socket.emit('room-access-result', { success: true, room });
     });
 
     socket.on('deleteRoom', async (data) => {
         if (!session?.user) return socket.emit('errorMsg', 'Login required.');
-        const room = await Room.findOne({ id: data.roomId });
-        if (!room || room.owner !== session.user.email) return socket.emit('errorMsg', 'Unauthorized.');
+        
+        const { error } = await supabase
+            .from('rooms')
+            .delete()
+            .eq('id', data.roomId)
+            .eq('owner', session.user.email); // Only owner can delete
 
-        await Room.deleteOne({ id: data.roomId });
-        await Message.deleteMany({ roomName: room.name });
-        io.emit('roomDeleted', room.id);
+        if (!error) io.emit('roomDeleted', data.roomId);
+    });
+
+    // Add these inside your io.on('connection') block in the server script:
+
+    socket.on('updateProfile', async (data) => {
+        if (!session?.user) return;
+        try {
+            const updateData = { name: data.newName, email: data.newEmail };
+            if (data.newPassword) {
+                updateData.password = await bcrypt.hash(data.newPassword, 10);
+            }
+
+            const { data: updatedUser, error } = await supabase
+            .from('users')
+            .update(updateData)
+            .eq('email', data.oldEmail)
+            .select()
+            .single();
+
+            if (error) throw error;
+
+            session.user = { name: updatedUser.name, email: updatedUser.email };
+            session.save(() => {
+                socket.emit('updateProfileResponse', { success: true, user: session.user });
+            });
+        } catch (e) {
+            socket.emit('updateProfileResponse', { success: false, message: e.message });
+        }
+    });
+
+    socket.on('deleteAccount', async (email) => {
+        if (!session?.user || session.user.email !== email) return;
+        try {
+            // Delete user (Supabase cascades delete if you set up FK references correctly)
+            const { error } = await supabase.from('users').delete().eq('email', email);
+            if (error) throw error;
+
+            delete session.user;
+            session.save(() => {
+                socket.emit('deleteResponse', { success: true });
+            });
+        } catch (e) {
+            socket.emit('deleteResponse', { success: false, message: e.message });
+        }
     });
 });
 

@@ -1,9 +1,11 @@
-const socket = io("https://non-e.onrender.com", {
-    withCredentials: true, // THIS IS CRITICAL
+// 1. Initialize Socket
+const URL = "https://non-e.onrender.com"; 
+const socket = io(URL, {
+    withCredentials: true,
     transports: ["websocket", "polling"]
 });
 
-// Initialize socket connection with Vercel-compatible settings
+// --- SELECTORS ---
 const signupBtn = document.getElementById('signup-btn');
 const loginBtn = document.getElementById('login-btn');
 const authModal = document.getElementById('auth');
@@ -12,62 +14,41 @@ const loginForm = document.getElementById('logins');
 const signupForm = document.getElementById('signups');
 const switchForms = document.querySelectorAll('.switch-process');
 
+// --- MODAL TOGGLES ---
 signupBtn.addEventListener('click', (e) => {
-  e.preventDefault();
-  authModal.classList.remove('hidden');
-  loginForm.classList.remove('hidden');
-  signupForm.classList.add('active');
+    e.preventDefault();
+    authModal.classList.remove('hidden');
+    loginForm.classList.remove('active'); // Reset active state
+    signupForm.classList.add('active');
 });
 
 loginBtn.addEventListener('click', (e) => {
-  e.preventDefault();
-  authModal.classList.remove('hidden');
-  loginForm.classList.add('active');
-  signupForm.classList.remove('active');
+    e.preventDefault();
+    authModal.classList.remove('hidden');
+    loginForm.classList.add('active');
+    signupForm.classList.remove('active');
 });
 
 closeBut.addEventListener('click', () => {
-  authModal.classList.add('hidden');
+    authModal.classList.add('hidden');
 });
 
 authModal.addEventListener('click', (e) => {
-  if (e.target === authModal) {
-    authModal.classList.add('hidden');
-  }
+    if (e.target === authModal) authModal.classList.add('hidden');
 });
 
 switchForms.forEach((btn) => {
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    const target = btn.getAttribute('data-target');
-    document.querySelectorAll('.authin').forEach(form => form.classList.remove('active'));
-    document.getElementById(target).classList.add('active');
-  });
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const target = btn.getAttribute('data-target');
+        document.querySelectorAll('.authin').forEach(form => form.classList.remove('active'));
+        document.getElementById(target).classList.add('active');
+    });
 });
 
-// Handle signup form submission
-// Keep the listener outside the submit block to avoid memory leaks
-socket.on('signupResponse', (response) => {
-    if (response.success) {
-        // --- THE "AUTO-LOGIN" MAGIC ---
-        // We save the user data returned from the server into localStorage
-        // This makes the user 'persist' across page refreshes and redirects
-        const userData = {
-            name: response.user.name,
-            email: response.user.email
-        };
-        
-        localStorage.setItem('currentUser', JSON.stringify(userData));
+// --- AUTH LOGIC (SUPABASE INTEGRATION) ---
 
-        alert("Welcome, " + response.user.name + "! Logging you in...");
-        
-        // Redirect to the chat page
-        window.location.href = 'This page.html'; 
-    } else {
-        alert("Signup failed: " + response.message);
-    }
-});
-
+// 1. Handle Signup Form Submission
 signupForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = signupForm.querySelector('input[type="text"]').value;
@@ -77,22 +58,54 @@ signupForm.addEventListener('submit', (e) => {
     socket.emit('signup', { name, email, password });
 });
 
-// Handle login form submission
+// 2. Handle Login Form Submission
 loginForm.addEventListener('submit', (e) => {
-  e.preventDefault();
+    e.preventDefault();
+    const email = loginForm.querySelector('input[type="email"]').value;
+    const password = loginForm.querySelector('input[type="password"]').value;
 
-  const email = loginForm.querySelector('input[type="email"]').value;
-  const password = loginForm.querySelector('input[type="password"]').value;
+    socket.emit('login', { email, password });
+});
 
-  socket.emit('login', { email, password });
-  socket.on('loginResponse', (res) => {
+// --- SOCKET RESPONSES (Listeners kept outside to prevent memory leaks) ---
+
+// Handle Signup Response
+socket.on('signupResponse', (response) => {
+    if (response.success) {
+        // Store the user info returned from Supabase
+        const userData = {
+            name: response.user.name,
+            email: response.user.email
+        };
+        
+        localStorage.setItem('currentUser', JSON.stringify(userData));
+        alert(`Welcome, ${response.user.name}! Account created.`);
+        
+        // Redirect to your main chat page
+        window.location.href = 'This page.html'; 
+    } else {
+        alert("Signup failed: " + response.message);
+    }
+});
+
+// Handle Login Response
+socket.on('loginResponse', (res) => {
     if (res.success) {
-        // SAVE HERE first before moving pages
+        // Save the session user from Supabase to local storage
         localStorage.setItem('currentUser', JSON.stringify(res.user));
-        // Then move to the chat page
+        
+        // Move to the chat page
         window.location.href = 'This page.html'; 
     } else {
         alert(res.message);
     }
 });
+
+// Handle Session Restoration (If user is already logged in via Supabase)
+socket.on('sessionRestore', (data) => {
+    if (data.user) {
+        localStorage.setItem('currentUser', JSON.stringify(data.user));
+        // Optional: Auto-redirect if they land on index while already logged in
+        // window.location.href = 'This page.html';
+    }
 });

@@ -1,5 +1,7 @@
-const socket = io("https://non-e.onrender.com", {
-    withCredentials: true, // THIS IS CRITICAL
+// 1. Initialize Socket
+const URL = "https://non-e.onrender.com"; 
+const socket = io(URL, {
+    withCredentials: true,
     transports: ["websocket", "polling"]
 });
 
@@ -19,7 +21,7 @@ toggleButton.addEventListener('click', () => {
     toggleButton.innerHTML = isDarkMode ? '🌞' : '🌙';
 });
 
-// --- AUTH SUBMISSIONS ---
+// --- AUTH & PROFILE SUBMISSIONS ---
 
 // Login
 document.getElementById('logins').addEventListener('submit', (e) => {
@@ -38,26 +40,26 @@ document.getElementById('signups').addEventListener('submit', (e) => {
     socket.emit('signup', { name, email, password });
 });
 
-// Update Profile
+// Update Profile (Supabase logic)
 document.getElementById('edit-profile-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const currentUser = JSON.parse(localStorage.getItem('currentUser'));
     if (!currentUser) return;
 
     socket.emit('updateProfile', {
-        oldEmail: currentUser.email,
+        oldEmail: currentUser.email, // Used as identifier in Supabase
         newName: document.getElementById('edit-name').value,
         newEmail: document.getElementById('edit-email').value,
         newPassword: document.getElementById('edit-password').value
     });
 });
 
-// Delete Account (Permanent MongoDB Wipe)
+// Delete Account (Permanent Supabase Wipe)
 document.getElementById('delusr').addEventListener('click', (e) => {
     e.preventDefault();
-    if (confirm("⚠️ Delete account permanently? This cannot be undone.")) {
+    if (confirm("⚠️ Delete account permanently from Supabase? This will remove all your messages and rooms.")) {
         const user = JSON.parse(localStorage.getItem('currentUser'));
-        socket.emit('deleteAccount', user.email);
+        if (user) socket.emit('deleteAccount', user.email);
     }
 });
 
@@ -91,7 +93,6 @@ document.querySelectorAll('.close-but').forEach(btn => {
     btn.addEventListener('click', () => {
         authModal.classList.add('hidden');
         editProfileModal.classList.add('hidden');
-        // Close room modals if they exist on this page
         const roomModals = ['create-chatroom', 'join-chatroom'];
         roomModals.forEach(id => {
             const el = document.getElementById(id);
@@ -133,15 +134,14 @@ function updateAccountButton() {
 // Initial UI Check
 updateAccountButton();
 
-// --- SOCKET LISTENERS (MongoDB Sync) ---
+// --- SOCKET LISTENERS (Supabase Sync) ---
 
-// Automatically logged in via MongoDB Session
+// Automatically logged in via Supabase/Postgres Session
 socket.on('sessionRestore', (data) => {
     if (data.user) {
         localStorage.setItem('currentUser', JSON.stringify(data.user));
         authModal.classList.add('hidden');
         updateAccountButton();
-        console.log("Welcome back, " + data.user.name);
     }
 });
 
@@ -180,8 +180,10 @@ socket.on('updateProfileResponse', (res) => {
 socket.on('deleteResponse', (res) => {
     if (res.success) {
         localStorage.removeItem('currentUser');
-        alert("Account deleted.");
-        location.reload();
+        alert("Account permanently deleted.");
+        window.location.href = 'index.html'; // Direct redirect on wipe
+    } else {
+        alert("Delete failed: " + res.message);
     }
 });
 
