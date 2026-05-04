@@ -147,27 +147,6 @@ socket.on('sessionRestore', (data) => {
     }
 });
 
-socket.on('loginResponse', (res) => {
-    if (res.success) {
-        localStorage.setItem('currentUser', JSON.stringify(res.user));
-        authModal.classList.add('hidden');
-        updateAccountButton();
-    } else {
-        alert(res.message);
-    }
-});
-
-socket.on('signupResponse', (res) => {
-    if (res.success) {
-        localStorage.setItem('currentUser', JSON.stringify(res.user));
-        authModal.classList.add('hidden');
-        updateAccountButton();
-        alert(`Welcome, ${res.user.name}!`);
-    } else {
-        alert(res.message);
-    }
-});
-
 socket.on('updateProfileResponse', (res) => {
     if (res.success) {
         localStorage.setItem('currentUser', JSON.stringify(res.user));
