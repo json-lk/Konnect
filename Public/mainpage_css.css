@@ -534,19 +534,6 @@ body.dark-mode .header button:hover {
     word-wrap: break-word;
 }
 
-#update-message {
-    transition: opacity 0.5s ease;
-    display: none; /* Hidden until someone joins */
-    padding: 8px;
-    margin: 10px auto;
-    background-color: rgba(0, 0, 0, 0.1);
-    border-radius: 20px;
-    width: fit-content;
-    font-size: 0.85rem;
-    color: #555;
-    text-align: center;
-}
-
 .chatroom .messages {
     flex: 1;
     width: 100%;
@@ -621,11 +608,6 @@ body.dark-mode .messages {
     background-image: url(/Images/doddle.jpg);
     background-size: cover;
     background-blend-mode: overlay;
-}
-
-body.dark-mode #update-message {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #29f722;
 }
 
 body.dark-mode .typebox{
