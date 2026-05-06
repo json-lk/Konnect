@@ -170,16 +170,14 @@ socket.on('roomDeleted', (roomId) => {
 });
 
 socket.on('notification', (data) => {
-    const chatWindow = document.getElementById('chat-messages'); // Your message container
+    const chatWindow = document.getElementById('chat-messages'); 
     
-    // Create a notification element
     const noticeElement = document.createElement('div');
-    noticeElement.className = "system-notification"; // Style this in CSS (e.g., italic/gray)
+    noticeElement.className = "system-notification"; 
     noticeElement.textContent = data.message;
     
     chatWindow.appendChild(noticeElement);
     
-    // Auto-scroll to bottom
     chatWindow.scrollTop = chatWindow.scrollHeight;
 });
 
