@@ -168,6 +168,14 @@ io.on('connection', (socket) => {
         socket.join(roomName);
         const history = await Message.find({ roomName }).sort({ timestamp: 1 }).limit(100);
         socket.emit('chatHistory', history); 
+        const { roomName, userName } = data;
+
+        socket.to(roomName).emit('notification', {
+            message: `${userName} has joined the room!`,
+            type: 'join'
+        });
+
+        console.log(`${userName} joined room: ${roomName}`);
     });
 
     socket.on('newMessage', async (data) => {
