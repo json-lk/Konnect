@@ -243,33 +243,33 @@ io.on('connection', (socket) => {
     });
 
     // On your Server (index.js or server.js)
-socket.on('deleteAccount', async (data) => {
-    try {
-        const { email } = data;
+    socket.on('deleteAccount', async (data) => {
+        try {
+            const { email } = data;
 
-        // Perform the deletion in MongoDB
-        // Assuming your Mongoose model is named 'User'
-        const result = await User.findOneAndDelete({ email: email });
+            // Perform the deletion in MongoDB
+            // Assuming your Mongoose model is named 'User'
+            const result = await User.findOneAndDelete({ email: email });
 
-        if (result) {
-            socket.emit('deleteResponse', { 
-                success: true, 
-                message: "User deleted from MongoDB" 
-            });
-        } else {
+            if (result) {
+                socket.emit('deleteResponse', { 
+                    success: true, 
+                    message: "User deleted from MongoDB" 
+                });
+            } else {
+                socket.emit('deleteResponse', { 
+                    success: false, 
+                    message: "User not found in database" 
+                });
+            }
+        } catch (err) {
+            console.error("Deletion Error:", err);
             socket.emit('deleteResponse', { 
                 success: false, 
-                message: "User not found in database" 
+                message: "Server error during deletion" 
             });
         }
-    } catch (err) {
-        console.error("Deletion Error:", err);
-        socket.emit('deleteResponse', { 
-            success: false, 
-            message: "Server error during deletion" 
-        });
-    }
-});
+    });
 });
 
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
