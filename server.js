@@ -51,7 +51,7 @@ const Message = mongoose.model('Message', new mongoose.Schema({
     timestamp: { 
         type: Date, 
         default: Date.now, 
-        expires: 86400 
+        expires: 60 
     }
 }));
 
